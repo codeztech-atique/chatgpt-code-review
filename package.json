@@ -20,9 +20,9 @@
     "lang-detector": "^1.0.6",
     "nodemon": "^2.0.22",
     "openai": "^3.2.1",
-    "serverless": "^3.32.2"
+    "serverless": "^2.70.0"
   },
   "devDependencies": {
-    "serverless-dotenv-plugin": "^6.0.0"
+    "serverless-dotenv-plugin": "^4.0.2"
   }
 }
