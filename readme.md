@@ -1,5 +1,5 @@
 # Run the application
-npm install
+npm install \n
 npm start
 
 # Code-Reviewer-Bot Part 2 API Description
