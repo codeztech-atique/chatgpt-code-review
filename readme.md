@@ -47,4 +47,4 @@ Pass the GPT token.
 https://documenter.getpostman.com/view/33205095/2sA3BoZWXv
 
 # API Endpoint URL
-https://bh4ibqapz8.execute-api.us-west-1.amazonaws.com/production/api
+https://7hz4z79x7i.execute-api.us-west-1.amazonaws.com/production/api
