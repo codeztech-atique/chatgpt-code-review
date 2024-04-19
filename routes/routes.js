@@ -6,7 +6,7 @@ app.use(bodyParser.json());
 
 
 // Controller
-const resourceController = require('../controllers/resourceController');
+const resourceController = require('../controllers/resourceController.js');
 const headerValidation = require('../middleware/headerValidation')
 const validateRequest = require('../middleware/validateRequest')
 
@@ -17,9 +17,8 @@ app.get('/', (req, res) => {
    });
 });
 
-
 // Get GPT Response
-app.post('/code-review', [headerValidation.bearerTokenPresent, validateRequest.validateRequest], (req, res) => { 
+app.post('/code-review', [validateRequest.validate], (req, res) => { 
     resourceController.codeReviewed(req, res);
 });
 

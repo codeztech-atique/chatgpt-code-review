@@ -1,10 +1,11 @@
+require('dotenv').config();
+
 // Import OpenAI API and File System
 const { Configuration, OpenAIApi } = require('openai');
 const detectLanguage = require('lang-detector');
 const chalk = require('chalk');
 const axios = require('axios');
 const config = require("config");
-
 
 
 // Build the prompt for OpenAI API.
@@ -36,35 +37,39 @@ const delectProgrammingLanguage = (data) => {
     })
 }
 
-const callOpenAPI = (body, request) => {
-    return new Promise(async(resolve, reject) => {
-        try {
-            // Config OpenAI API.
-            const configuration = new Configuration({
-                apiKey: body.token,
-            });
+const callOpenAPI = async (body, request) => {
+    try {
+        // Config OpenAI API.
+        const configuration = new Configuration({
+            apiKey: process.env.GPT_TOKEN,
+        });
 
-            // Config Language Detect API
-            const openai = new OpenAIApi(configuration);
+        // Create an OpenAI API client
+        const openai = new OpenAIApi(configuration);
 
-            const completion = await openai.createChatCompletion(request);
-            const review = completion.data?.choices[0]?.message?.content;
-            resolve(review);
-        } catch(err) {
-            reject("Failing Open AI:", err);
-        }
-    })
+        // Make the API call to get the completion
+        const completion = await openai.createChatCompletion(request);
+
+        // Extract the content from the response
+        const review = completion.data?.choices[0]?.message?.content;
+        
+        return review;
+    } catch(err) {
+        // Throw an error with a more descriptive message
+        throw new Error(`Failing Open AI due to: ${err.message}`);
+    }
 }
+
 
 exports.callOpenAIAPI = (body) => {
     // Read the file
     const committedFileUrl = body.url;
     return new Promise((resolve, reject) => {
         const userRequest = {
-            model: "gpt-3.5-turbo",
+            model: process.env.GPT_MODEL,
             messages: []
         }
-        
+
         getCommittedFileDetails(committedFileUrl).then(async(res) => {
            return delectProgrammingLanguage(res);
         }).then((response) => {
@@ -84,7 +89,7 @@ exports.callOpenAIAPI = (body) => {
             console.log(chalk.green(prompt), finalResponse);
             resolve(finalResponse);
         }).catch((err) => {
-            console.log("Error:", err);
+            console.log("Error here:", err);
             reject(err);
         });
     })

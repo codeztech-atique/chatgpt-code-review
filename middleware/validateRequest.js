@@ -1,6 +1,6 @@
 const chalk = require("chalk");
 
-exports.validateRequest = (req, res, next) => {
+exports.validate = (req, res, next) => {
     var error = '';
     if (req.body.url === undefined || req.body.url === '') {
       console.log(chalk.red('url is missing'));
