@@ -41,9 +41,9 @@ The API collects the feedback from GPT-4 and prepares it to be integrated back i
 Pass the GPT token.
 
 # Setup .env file
-GPT_TOKEN=<Your-GPTModel-Token>
-GPT_MODEL=<Your-GPTModel-Name>
-GITHUB_TOKEN=<Your-GitHubToken>
+- **GPT_TOKEN=GPTModel-Token**
+- **GPT_MODEL=GPTModel-Name**
+- **GITHUB_TOKEN=GitHubToken**
 
 # API Docs
 https://documenter.getpostman.com/view/33205095/2sA3BoZWXv
