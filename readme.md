@@ -2,9 +2,7 @@
 npm install
 npm start
 
-# Description
-
-# Code-Reviewer-Bot Part 2 API
+# Code-Reviewer-Bot Part 2 API Description
 
 ## Overview
 The Part 2 API of the code-reviewer-bot is designed to analyze code changes using OpenAI's GPT-4 model. It serves as a critical component in automating the code review process by providing AI-generated insights into code quality and suggested improvements directly into the development workflow.
@@ -41,8 +39,8 @@ The API collects the feedback from GPT-4 and prepares it to be integrated back i
 Pass the GPT token.
 
 # Setup .env file
-- **GPT_TOKEN=GPTModel-Token**
-- **GPT_MODEL=GPTModel-Name**
+- **GPT_TOKEN=GPTModelToken**
+- **GPT_MODEL=GPTModelName**
 - **GITHUB_TOKEN=GitHubToken**
 
 # API Docs
