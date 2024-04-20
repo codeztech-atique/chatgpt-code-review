@@ -80,12 +80,15 @@ exports.callOpenAIAPI = (body) => {
                 },
                 {
                     role: "user",
+                    content: "Please review the code and add comments. Could you also provide a rating out of 10 based on the code review? Return the response in JSON format. Make sure you will have 3 json field name - comments, rating & ratingJustification."
+                },
+                {
+                    role: "user",
                     content: response.data
                 }
             );
             return callOpenAPI(body, userRequest);
-        }). 
-        then((finalResponse) => {
+        }).then((finalResponse) => {
             console.log(chalk.green(prompt), finalResponse);
             resolve(finalResponse);
         }).catch((err) => {

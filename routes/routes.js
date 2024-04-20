@@ -18,7 +18,7 @@ app.get('/', (req, res) => {
 });
 
 // Get GPT Response
-app.post('/code-review', [validateRequest.validate], (req, res) => { 
+app.post('/code-review', (req, res) => { 
     resourceController.codeReviewed(req, res);
 });
 
