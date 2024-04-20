@@ -6,8 +6,8 @@ exports.codeReviewed = async(req, res) => {
         console.log("=========================")
         console.log(req.body);
         console.log("=========================")
-        // const getGPTResponse = await service.callOpenAIAPI(req.body);
-        res.status(config.get('success').statusCode).send(req.body);
+        const getGPTResponse = await service.callOpenAIAPI(req.body);
+        res.status(config.get('success').statusCode).send(getGPTResponse);
     } catch(err) {
         res.send(config.get('error').statusCode).send({
             error: err

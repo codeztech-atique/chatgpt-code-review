@@ -12,16 +12,16 @@ const config = require("config");
 var prompt = config.get("promptMessage");
 
 
-const getCommittedFileDetails = (committedFileUrl) => {
-    return new Promise((resolve, reject) => {
-        axios.get(committedFileUrl).then((res) => {
-            // prompt = prompt + `${res.data}`;
-            resolve(res.data);
-        }).catch((err) => {
-            reject(err);
-        })
-    })
-}
+// const getCommittedFileDetails = (committedFileUrl) => {
+//     return new Promise((resolve, reject) => {
+//         axios.get(committedFileUrl).then((res) => {
+//             // prompt = prompt + `${res.data}`;
+//             resolve(res.data);
+//         }).catch((err) => {
+//             reject(err);
+//         })
+//     })
+// }
 
 
 const delectProgrammingLanguage = (data) => {
@@ -61,39 +61,51 @@ const callOpenAPI = async (body, request) => {
 }
 
 
-exports.callOpenAIAPI = (body) => {
-    // Read the file
-    const committedFileUrl = body.url;
-    return new Promise((resolve, reject) => {
-        const userRequest = {
-            model: process.env.GPT_MODEL,
-            messages: []
-        }
+const getFileContent = async (file) => {
+    try {
+        const response = await axios.get(file.raw_url, {
+            headers: { 'Authorization': `Bearer ${process.env.GITHUB_TOKEN}` }
+        });
+        return response.data;
+    } catch (error) {
+        throw new Error(`Failed to fetch file content: ${error.message}`);
+    }
+};
 
-        getCommittedFileDetails(committedFileUrl).then(async(res) => {
-           return delectProgrammingLanguage(res);
-        }).then((response) => {
-            userRequest.messages.push(
-                {
+exports.callOpenAIAPI = (body) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const { filesChanged } = body;
+            const userRequest = {
+                model: process.env.GPT_MODEL,
+                messages: []
+            };
+
+            // Get file content for each file changed
+            for (const file of filesChanged) {
+                const fileContent = await getFileContent(file);
+                const language = detectLanguage(fileContent);
+
+                // Here, I am assuming you would like to add each file content to the OpenAI request
+                userRequest.messages.push({
                     role: "system",
-                    content: response.language
-                },
-                {
+                    content: `The file ${file.filename} is written in ${language}.`
+                }, {
                     role: "user",
-                    content: "Please review the code and add comments. Could you also provide a rating out of 10 based on the code review? Return the response in JSON format. Make sure you will have 3 json field name - comments, rating & ratingJustification."
-                },
-                {
+                    content: "Please review the code and add comments. Could you also provide a rating out of 10 based on the code review? Return the response in JSON format. Make sure you will have 3 json fields named - comments, rating & ratingJustification."
+                }, {
                     role: "user",
-                    content: response.data
-                }
-            );
-            return callOpenAPI(body, userRequest);
-        }).then((finalResponse) => {
+                    content: fileContent
+                });
+            }
+
+            // Now call OpenAI API with the request
+            const finalResponse = await callOpenAPI(body, userRequest);
             console.log(chalk.green(prompt), finalResponse);
             resolve(finalResponse);
-        }).catch((err) => {
-            console.log("Error here:", err);
+        } catch (err) {
+            console.error(chalk.red("Error here:", err));
             reject(err);
-        });
-    })
-}
+        }
+    });
+};
