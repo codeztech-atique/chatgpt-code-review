@@ -1,7 +1,9 @@
+require('aws-sdk/lib/maintenance_mode_message').suppress = true;
 const express = require('express');
 const bodyparser = require('body-parser');
 const cors = require('cors');
 const config = require('config');
+
 
 const app = express();
 

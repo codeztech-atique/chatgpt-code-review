@@ -1,7 +1,7 @@
 {
     "gptModal": "gpt-3.5-turbo",
     "maximumSizeDataTransfer": "5MB",
-    "promptMessage": "Review the code below and provide feedback on how to improve it. \n",
+    "promptMessage": "Please review the code and add comments. Could you also provide a rating out of 10 based on the code review? Return the response in JSON.stringify format. Make sure you will have 3 json fields named - comments, rating & ratingJustification.",
     "success": {
         "statusCode": 200
     },

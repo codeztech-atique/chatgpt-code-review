@@ -6,106 +6,147 @@ const detectLanguage = require('lang-detector');
 const chalk = require('chalk');
 const axios = require('axios');
 const config = require("config");
+const AWS = require('aws-sdk');
+
+AWS.config.update({
+    region: process.env.REGION, // replace with your region
+});
 
 
-// Build the prompt for OpenAI API.
-var prompt = config.get("promptMessage");
+const docClient = new AWS.DynamoDB.DocumentClient();
 
+const postCommentToGitHub = async (repoName, commitId, comment) => {
+    const [owner, repo] = repoName.split('/');
+    const url = `https://api.github.com/repos/${owner}/${repo}/commits/${commitId}/comments`;
+    const response = await axios.post(url, { body: comment }, {
+        headers: { 'Authorization': `Bearer ${process.env.GITHUB_TOKEN}` }
+    });
+    return response.data;
+};
 
-// const getCommittedFileDetails = (committedFileUrl) => {
-//     return new Promise((resolve, reject) => {
-//         axios.get(committedFileUrl).then((res) => {
-//             // prompt = prompt + `${res.data}`;
-//             resolve(res.data);
-//         }).catch((err) => {
-//             reject(err);
-//         })
-//     })
-// }
+// Function to create and merge a pull request
+const mergeBranches = async (repoName, base, head, title, body) => {
+    const [owner, repo] = repoName.split('/');
+    const createPRUrl = `https://api.github.com/repos/${owner}/${repo}/pulls`;
+    
+    try {
+        // Create a pull request from `head` to `base`
+        const prResponse = await axios.post(createPRUrl, {
+            title: title,
+            body: body,
+            head: head,
+            base: base
+        }, {
+            headers: { 'Authorization': `Bearer ${process.env.GITHUB_TOKEN}` }
+        });
 
+        // If the PR is created successfully, merge it
+        const mergeUrl = `https://api.github.com/repos/${owner}/${repo}/pulls/${prResponse.data.number}/merge`;
+        const mergeResponse = await axios.put(mergeUrl, {
+            commit_title: `Merging ${head} into ${base}`,
+            commit_message: body,
+            merge_method: 'merge' // You can also use 'squash' or 'rebase'
+        }, {
+            headers: { 'Authorization': `Bearer ${process.env.GITHUB_TOKEN}` }
+        });
 
-const delectProgrammingLanguage = (data) => {
-    return new Promise((resolve, reject) => {
-        try {
-            resolve({
-                language: detectLanguage(data),
-                data: data
-            });
-        } catch(err) {
-            reject(err);
-        }
-    })
-}
+        return mergeResponse.data;
+    } catch (err) {
+        throw new Error(`Failed to create or merge pull request: ${err.message}`);
+    }
+};
+
+const storeDataInDynamoDB = async (data) => {
+    const params = {
+        TableName: 'prod-commit-reviews',
+        Item: data
+    };
+    return docClient.put(params).promise();
+};
 
 const callOpenAPI = async (body, request) => {
     try {
-        // Config OpenAI API.
-        const configuration = new Configuration({
-            apiKey: process.env.GPT_TOKEN,
-        });
-
-        // Create an OpenAI API client
+        const configuration = new Configuration({ apiKey: process.env.GPT_TOKEN });
         const openai = new OpenAIApi(configuration);
-
-        // Make the API call to get the completion
         const completion = await openai.createChatCompletion(request);
-
-        // Extract the content from the response
-        const review = completion.data?.choices[0]?.message?.content;
-        
-        return review;
-    } catch(err) {
-        // Throw an error with a more descriptive message
+        return completion.data.choices[0].message.content; // Assuming GPT-4 returns data in this structure
+    } catch (err) {
         throw new Error(`Failing Open AI due to: ${err.message}`);
     }
-}
+};
 
-
-const getFileContent = async (file) => {
+exports.callOpenAIAPI = async (body) => {
     try {
-        const response = await axios.get(file.raw_url, {
+        const { filesChanged } = body;
+        let userRequest = {
+            model: process.env.GPT_MODEL,
+            messages: []
+        };
+
+        for (const file of filesChanged) {
+            const fileContent = await getFileContent(file.raw_url);
+            const language = detectLanguage(fileContent);
+
+            userRequest.messages.push({
+                role: "system",
+                content: `The file ${file.filename} is written in ${language}.`
+            }, {
+                role: "user",
+                content: config.get("promptMessage")
+            }, {
+                role: "user",
+                content: fileContent
+            });
+        }
+
+        let reviewData = await callOpenAPI(body, userRequest);
+        reviewData = reviewData.trim();  // Remove leading/trailing whitespace
+        reviewData = reviewData.replace(/```\s*json\s*\n/, '');  // Remove the starting delimiter
+        reviewData = reviewData.replace(/\n```$/, '');  // Remove the ending delimiter
+
+        const jsonObject = JSON.parse(reviewData);
+
+        const isGoodRating = jsonObject.rating > 5;
+        await storeDataInDynamoDB({
+            commitId: body.commitId,
+            userId: body.committerUserId,
+            totalLinesAdded: body.totalLinesAdded,
+            repoName: body.repoName,
+            filesChanged: body.filesChanged,
+            comments: jsonObject.comments,
+            rating: jsonObject.rating,
+            ratingJustification: jsonObject.ratingJustification,
+            mergeToProduction: isGoodRating // Store the flag based on rating
+        });
+
+        for (const comment of jsonObject.comments) {
+            await postCommentToGitHub(body.repoName, body.commitId, comment);
+        }
+
+        if (isGoodRating) {
+            // Create and merge a pull request from 'develop' to 'master'
+            await mergeBranches(body.repoName, 'master', 'develop', 'Automated PR by Bot', 'Automatically merging due to good review ratings.');
+            console.log('Successfully merged develop into master');
+            return {message: 'Comments posted to GitHub successfully. Successfully merged develop into master.'};
+        } else {
+            console.log('Your code has less than 5 rating. Code does not merge with master branch, please check your commit comments.');
+            return {message: 'Your code has less than 5 rating. Code does not merge with master branch, please check your commit comments.'};
+        }
+
+       
+    } catch (err) {
+        console.error(chalk.red("Error:", err));
+        throw err; // Rethrow the error for upstream handling
+    }
+};
+
+const getFileContent = async (url) => {
+    try {
+        const response = await axios.get(url, {
             headers: { 'Authorization': `Bearer ${process.env.GITHUB_TOKEN}` }
         });
         return response.data;
     } catch (error) {
         throw new Error(`Failed to fetch file content: ${error.message}`);
     }
-};
-
-exports.callOpenAIAPI = (body) => {
-    return new Promise(async (resolve, reject) => {
-        try {
-            const { filesChanged } = body;
-            const userRequest = {
-                model: process.env.GPT_MODEL,
-                messages: []
-            };
-
-            // Get file content for each file changed
-            for (const file of filesChanged) {
-                const fileContent = await getFileContent(file);
-                const language = detectLanguage(fileContent);
-
-                // Here, I am assuming you would like to add each file content to the OpenAI request
-                userRequest.messages.push({
-                    role: "system",
-                    content: `The file ${file.filename} is written in ${language}.`
-                }, {
-                    role: "user",
-                    content: "Please review the code and add comments. Could you also provide a rating out of 10 based on the code review? Return the response in JSON format. Make sure you will have 3 json fields named - comments, rating & ratingJustification."
-                }, {
-                    role: "user",
-                    content: fileContent
-                });
-            }
-
-            // Now call OpenAI API with the request
-            const finalResponse = await callOpenAPI(body, userRequest);
-            console.log(chalk.green(prompt), finalResponse);
-            resolve(finalResponse);
-        } catch (err) {
-            console.error(chalk.red("Error here:", err));
-            reject(err);
-        }
-    });
 };
