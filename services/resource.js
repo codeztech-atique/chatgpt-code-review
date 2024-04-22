@@ -24,8 +24,9 @@ const postCommentToGitHub = async (repoName, commitId, comment) => {
     return response.data;
 };
 
-// Function to create and merge a pull request
-const mergeBranches = async (repoName, base, head, title, body) => {
+
+// Function to create a pull request
+const createPullRequest = async (repoName, base, head, title, body) => {
     const [owner, repo] = repoName.split('/');
     const createPRUrl = `https://api.github.com/repos/${owner}/${repo}/pulls`;
     
@@ -40,21 +41,44 @@ const mergeBranches = async (repoName, base, head, title, body) => {
             headers: { 'Authorization': `Bearer ${process.env.GITHUB_TOKEN}` }
         });
 
-        // If the PR is created successfully, merge it
-        const mergeUrl = `https://api.github.com/repos/${owner}/${repo}/pulls/${prResponse.data.number}/merge`;
-        const mergeResponse = await axios.put(mergeUrl, {
-            commit_title: `Merging ${head} into ${base}`,
-            commit_message: body,
-            merge_method: 'merge' // You can also use 'squash' or 'rebase'
-        }, {
-            headers: { 'Authorization': `Bearer ${process.env.GITHUB_TOKEN}` }
-        });
-
-        return mergeResponse.data;
+        return prResponse.data; // Return the response which includes PR details
     } catch (err) {
-        throw new Error(`Failed to create or merge pull request: ${err.message}`);
+        throw new Error(`Failed to create pull request: ${err.message}`);
     }
 };
+
+
+// Function to create and merge a pull request
+// const mergeBranches = async (repoName, base, head, title, body) => {
+//     const [owner, repo] = repoName.split('/');
+//     const createPRUrl = `https://api.github.com/repos/${owner}/${repo}/pulls`;
+    
+//     try {
+//         // Create a pull request from `head` to `base`
+//         const prResponse = await axios.post(createPRUrl, {
+//             title: title,
+//             body: body,
+//             head: head,
+//             base: base
+//         }, {
+//             headers: { 'Authorization': `Bearer ${process.env.GITHUB_TOKEN}` }
+//         });
+
+//         // If the PR is created successfully, merge it
+//         const mergeUrl = `https://api.github.com/repos/${owner}/${repo}/pulls/${prResponse.data.number}/merge`;
+//         const mergeResponse = await axios.put(mergeUrl, {
+//             commit_title: `Merging ${head} into ${base}`,
+//             commit_message: body,
+//             merge_method: 'merge' // You can also use 'squash' or 'rebase'
+//         }, {
+//             headers: { 'Authorization': `Bearer ${process.env.GITHUB_TOKEN}` }
+//         });
+
+//         return mergeResponse.data;
+//     } catch (err) {
+//         throw new Error(`Failed to create or merge pull request: ${err.message}`);
+//     }
+// };
 
 const storeDataInDynamoDB = async (data) => {
     const params = {
@@ -76,7 +100,8 @@ const callOpenAPI = async (body, request) => {
         2. List of New Features, Enhancements, Bug Fixes, and Documentation changes
         3. A walkthrough explaining the integration and functionality enhancements
         4. Detailed changes per file
-        5. Highlight any hardcoded or potentially sensitive values`;
+        5. Highlight any hardcoded or potentially sensitive values
+        `;
 
         const completion = await openai.createChatCompletion({
             model: process.env.GPT_MODEL,
@@ -90,21 +115,38 @@ const callOpenAPI = async (body, request) => {
 };
 
 const detectHardcodedValues = (code) => {
-    const patterns = [
-        /\w+Key\s*=\s*['"][^'"]+['"]/g, // Matches something like apiKey = "abc123"
-        /\w+Token\s*=\s*['"][^'"]+['"]/g, // Matches something like apiToken = "secret"
-        /\w+Secret\s*=\s*['"][^'"]+['"]/g, // Matches something like secretKey = "verySecret"
-    ];
-    return patterns.flatMap(pattern => code.match(pattern) || []);
-};
+    console.log("Code:", code);
+    const findings = [];
 
+    // Define patterns to match different types of hardcoded values
+    const patterns = {
+        'Sensitive Keys/Tokens': /\b(?:apiKey|apiToken|accessKey|secretKey|password)\s*=\s*['"][^'"]+['"]/gi,
+        'Generic Strings': /(['"])[^'"]*\1/g,
+        'Numeric Literals': /\b\d+\b/g,
+        'Boolean Literals': /\b(?:true|false)\b/gi,
+        'URLs/URIs': /\bhttps?:\/\/[^\s'"]+\b/gi,
+        'File Paths': /['"](?:\/|\\|\.\.\/|\.\\)[^\s'"]*['"]/g
+    };
+
+    // Check for each pattern in the code
+    Object.entries(patterns).forEach(([type, pattern]) => {
+        const matches = code.match(pattern);
+        if (matches && matches.length > 0) {
+            findings.push({ type, matches });
+        }
+    });
+
+    return findings;
+};
 
 const prepareReviewRequest = (files) => {
     let review = { files: {} };
-    files.forEach(file => {
-        const content = getFileContent(file.raw_url); // assuming content fetch function
-        const hardcoded = detectHardcodedValues(content);
-        review.files[file.filename] = { content, hardcoded };
+    files.forEach(async file => {
+        if(file.raw_url) {
+            const content = await getFileContent(file.raw_url); // assuming content fetch function
+            const hardcoded = detectHardcodedValues(content);
+            review.files[file.filename] = { content, hardcoded };
+        }
     });
     return review;
 };
@@ -139,7 +181,12 @@ exports.callOpenAIAPI = async (body) => {
             }, {
                 role: "user",
                 content: JSON.stringify(preparedReview)
-            }]
+            },
+            // {
+            //     role: "user",
+            //     content: config.get('promptMessage')
+            // }
+            ]
         };
 
         let reviewData = await callOpenAPI(body, userRequest);
@@ -147,34 +194,46 @@ exports.callOpenAIAPI = async (body) => {
         reviewData = reviewData.replace(/```\s*json\s*\n/, '');  // Remove the starting delimiter
         reviewData = reviewData.replace(/\n```$/, '');  // Remove the ending delimiter
 
-        const jsonObject = JSON.parse(reviewData);
+        console.log("------------------ Result ----------------------")
+        console.log(reviewData);
 
-        const isGoodRating = jsonObject.rating > 5;
+        // const jsonObject = JSON.parse(reviewData);
+
+        // const isGoodRating = jsonObject.rating > 5;
+
         await storeDataInDynamoDB({
             commitId: body.commitId,
             userId: body.committerUserId,
             totalLinesAdded: body.totalLinesAdded,
             repoName: body.repoName,
             filesChanged: body.filesChanged,
-            comments: jsonObject.comments,
-            rating: jsonObject.rating,
-            ratingJustification: jsonObject.ratingJustification,
-            mergeToProduction: isGoodRating // Store the flag based on rating
+
+
+            comments: reviewData,
+            // rating: jsonObject.rating,
+            // ratingJustification: jsonObject.ratingJustification,
+            // mergeToProduction: isGoodRating // Store the flag based on rating
         });
 
-        for (const comment of jsonObject.comments) {
-            await postCommentToGitHub(body.repoName, body.commitId, comment);
-        }
 
-        if (isGoodRating) {
-            // Create and merge a pull request from 'develop' to 'master'
-            await mergeBranches(body.repoName, 'master', 'develop', 'Automated PR by Bot', 'Automatically merging due to good review ratings.');
-            console.log('Successfully merged develop into master');
-            return { message: 'Comments posted to GitHub successfully. Successfully merged develop into master.' };
-        } else {
-            console.log('Your code has less than 5 rating. Code does not merge with master branch, please check your commit comments.');
-            return { message: 'Your code has less than 5 rating. Code does not merge with master branch, please check your commit comments.' };
-        }
+        // POST COMMENT TO GITHUB
+        await postCommentToGitHub(body.repoName, body.commitId, reviewData);
+
+        // CODE REVIEW BY GPT-4 AND CREATE A PULL REQUEST
+        await createPullRequest(body.repoName, 'master', 'develop', 'AI Code Review Enhancements and Fixes', mergeBranches)
+       
+
+        return { message: 'Comments posted to GitHub successfully. Created a PR as well.' };
+
+        // if (isGoodRating) {
+        //     // Create and merge a pull request from 'develop' to 'master'
+        //     await mergeBranches(body.repoName, 'master', 'develop', 'Automated PR by Bot', 'Automatically merging due to good review ratings.');
+        //     console.log('Successfully merged develop into master');
+        //     return { message: 'Comments posted to GitHub successfully. Successfully merged develop into master.' };
+        // } else {
+        //     console.log('Your code has less than 5 rating. Code does not merge with master branch, please check your commit comments.');
+        //     return { message: 'Your code has less than 5 rating. Code does not merge with master branch, please check your commit comments.' };
+        // }
 
     } catch (err) {
         console.error(chalk.red("Error:", err));
@@ -185,6 +244,7 @@ exports.callOpenAIAPI = async (body) => {
 
 const getFileContent = async (url) => {
     try {
+        console.log("Url are:", url)
         const response = await axios.get(url, {
             headers: { 'Authorization': `Bearer ${process.env.GITHUB_TOKEN}` }
         });
