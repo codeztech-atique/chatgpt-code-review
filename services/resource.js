@@ -71,8 +71,8 @@ const callOpenAPI = async (body, request) => {
 
         // Adjust the prompt format here
         let detailedPrompt = `Given the code changes in JSON format: ${JSON.stringify(request, null, 2)}, 
-        provide a detailed code review. The review should include:
-        1. Summary by CodeRabbit
+        Add proper styling like readme.md & provide a detailed code review. The review should include:
+        1. Summary by Zoom CodeGuard
         2. List of New Features, Enhancements, Bug Fixes, and Documentation changes
         3. A walkthrough explaining the integration and functionality enhancements
         4. Detailed changes per file

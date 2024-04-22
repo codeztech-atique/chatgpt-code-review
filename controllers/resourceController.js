@@ -6,7 +6,8 @@ exports.codeReviewed = async(req, res) => {
         const getGPTResponse = await service.callOpenAIAPI(req.body);
         res.status(config.get('success').statusCode).send(getGPTResponse);
     } catch(err) {
-        res.send(config.get('error').statusCode).send({
+        console.error("Error processing request:", err);
+        res.status(config.get('error').statusCode).send({
             error: err
         })
     }
