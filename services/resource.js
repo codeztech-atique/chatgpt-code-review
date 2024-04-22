@@ -98,6 +98,17 @@ const detectHardcodedValues = (code) => {
     return patterns.flatMap(pattern => code.match(pattern) || []);
 };
 
+
+const prepareReviewRequest = (files) => {
+    let review = { files: {} };
+    files.forEach(file => {
+        const content = getFileContent(file.raw_url); // assuming content fetch function
+        const hardcoded = detectHardcodedValues(content);
+        review.files[file.filename] = { content, hardcoded };
+    });
+    return review;
+};
+
 exports.callOpenAIAPI = async (body) => {
     try {
         const { filesChanged } = body;
