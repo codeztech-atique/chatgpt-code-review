@@ -221,7 +221,7 @@ exports.callOpenAIAPI = async (body) => {
         await postCommentToGitHub(body.repoName, body.commitId, reviewData);
 
         // CODE REVIEW BY GPT-4 AND CREATE A PULL REQUEST
-        await createPullRequest(body.repoName, 'master', 'develop', 'AI Code Review Enhancements and Fixes', mergeBranches)
+        await createPullRequest(body.repoName, 'master', 'develop', 'AI Code Review Enhancements and Fixes', reviewData)
        
 
         return { message: 'Comments posted to GitHub successfully. Created a PR as well.' };
