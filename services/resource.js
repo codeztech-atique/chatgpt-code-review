@@ -224,7 +224,7 @@ exports.callOpenAIAPI = async (body) => {
         await createPullRequest(body.repoName, 'master', 'develop', 'AI Code Review Enhancements and Fixes', reviewData)
        
 
-        return { message: 'Comments posted to GitHub successfully. Created a PR as well.' };
+        return { message: 'Comments were successfully posted to GitHub. A pull request (PR) was also created.' };
 
         // if (isGoodRating) {
         //     // Create and merge a pull request from 'develop' to 'master'
