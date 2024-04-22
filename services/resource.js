@@ -68,36 +68,68 @@ const callOpenAPI = async (body, request) => {
     try {
         const configuration = new Configuration({ apiKey: process.env.GPT_TOKEN });
         const openai = new OpenAIApi(configuration);
-        const completion = await openai.createChatCompletion(request);
+
+        // Adjust the prompt format here
+        let detailedPrompt = `Given the code changes in JSON format: ${JSON.stringify(request, null, 2)}, 
+        provide a detailed code review. The review should include:
+        1. Summary by CodeRabbit
+        2. List of New Features, Enhancements, Bug Fixes, and Documentation changes
+        3. A walkthrough explaining the integration and functionality enhancements
+        4. Detailed changes per file
+        5. Highlight any hardcoded or potentially sensitive values`;
+
+        const completion = await openai.createChatCompletion({
+            model: process.env.GPT_MODEL,
+            messages: [{ role: "system", content: detailedPrompt }],
+        });
+
         return completion.data.choices[0].message.content; // Assuming GPT-4 returns data in this structure
     } catch (err) {
         throw new Error(`Failing Open AI due to: ${err.message}`);
     }
 };
 
+const detectHardcodedValues = (code) => {
+    const patterns = [
+        /\w+Key\s*=\s*['"][^'"]+['"]/g, // Matches something like apiKey = "abc123"
+        /\w+Token\s*=\s*['"][^'"]+['"]/g, // Matches something like apiToken = "secret"
+        /\w+Secret\s*=\s*['"][^'"]+['"]/g, // Matches something like secretKey = "verySecret"
+    ];
+    return patterns.flatMap(pattern => code.match(pattern) || []);
+};
+
 exports.callOpenAIAPI = async (body) => {
     try {
         const { filesChanged } = body;
-        let userRequest = {
-            model: process.env.GPT_MODEL,
-            messages: []
-        };
 
+        console.log("--------------------------------------------")
+        console.log(body);
+        console.log("--------------------------------------------")
+
+        let filesData = [];
+
+        // Fetch and prepare file data with hardcoded value detection
         for (const file of filesChanged) {
             const fileContent = await getFileContent(file.raw_url);
-            const language = detectLanguage(fileContent);
-
-            userRequest.messages.push({
-                role: "system",
-                content: `The file ${file.filename} is written in ${language}.`
-            }, {
-                role: "user",
-                content: config.get("promptMessage")
-            }, {
-                role: "user",
+            filesData.push({
+                filename: file.filename,
                 content: fileContent
             });
         }
+
+        // Prepare review request data including detection of hardcoded values
+        const preparedReview = prepareReviewRequest(filesData);
+
+        let userRequest = {
+            model: process.env.GPT_MODEL,
+            messages: [{
+                role: "system",
+                content: `Analyze the following code changes and provide a detailed code review:`
+            }, {
+                role: "user",
+                content: JSON.stringify(preparedReview)
+            }]
+        };
 
         let reviewData = await callOpenAPI(body, userRequest);
         reviewData = reviewData.trim();  // Remove leading/trailing whitespace
@@ -127,18 +159,18 @@ exports.callOpenAIAPI = async (body) => {
             // Create and merge a pull request from 'develop' to 'master'
             await mergeBranches(body.repoName, 'master', 'develop', 'Automated PR by Bot', 'Automatically merging due to good review ratings.');
             console.log('Successfully merged develop into master');
-            return {message: 'Comments posted to GitHub successfully. Successfully merged develop into master.'};
+            return { message: 'Comments posted to GitHub successfully. Successfully merged develop into master.' };
         } else {
             console.log('Your code has less than 5 rating. Code does not merge with master branch, please check your commit comments.');
-            return {message: 'Your code has less than 5 rating. Code does not merge with master branch, please check your commit comments.'};
+            return { message: 'Your code has less than 5 rating. Code does not merge with master branch, please check your commit comments.' };
         }
 
-       
     } catch (err) {
         console.error(chalk.red("Error:", err));
         throw err; // Rethrow the error for upstream handling
     }
 };
+
 
 const getFileContent = async (url) => {
     try {
