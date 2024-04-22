@@ -194,13 +194,7 @@ exports.callOpenAIAPI = async (body) => {
         reviewData = reviewData.replace(/```\s*json\s*\n/, '');  // Remove the starting delimiter
         reviewData = reviewData.replace(/\n```$/, '');  // Remove the ending delimiter
 
-        console.log("------------------ Result ----------------------")
-        console.log(reviewData);
-
-        // const jsonObject = JSON.parse(reviewData);
-
-        // const isGoodRating = jsonObject.rating > 5;
-
+        
         await storeDataInDynamoDB({
             commitId: body.commitId,
             userId: body.committerUserId,
