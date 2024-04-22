@@ -210,6 +210,7 @@ exports.callOpenAIAPI = async (body) => {
 
 
             comments: reviewData,
+            mergeToProduction: false
             // rating: jsonObject.rating,
             // ratingJustification: jsonObject.ratingJustification,
             // mergeToProduction: isGoodRating // Store the flag based on rating
