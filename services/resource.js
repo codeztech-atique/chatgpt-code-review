@@ -29,7 +29,7 @@ const postCommentToGitHub = async (repoName, commitId, comment) => {
 const createPullRequest = async (repoName, base, head, title, body) => {
     const [owner, repo] = repoName.split('/');
     const createPRUrl = `https://api.github.com/repos/${owner}/${repo}/pulls`;
-    
+    console.log("Create PR URL:", createPRUrl)
     try {
         // Create a pull request from `head` to `base`
         const prResponse = await axios.post(createPRUrl, {
@@ -43,6 +43,9 @@ const createPullRequest = async (repoName, base, head, title, body) => {
 
         return prResponse.data; // Return the response which includes PR details
     } catch (err) {
+        if (err.response) {
+            console.error('GitHub API responded with:', err.response.data);
+        }
         throw new Error(`Failed to create pull request: ${err.message}`);
     }
 };
@@ -88,154 +91,96 @@ const storeDataInDynamoDB = async (data) => {
     return docClient.put(params).promise();
 };
 
-const callOpenAPI = async (body, request) => {
+const callOpenAPI = async (userRequest) => {
     try {
         const configuration = new Configuration({ apiKey: process.env.GPT_TOKEN });
         const openai = new OpenAIApi(configuration);
 
-        // Adjust the prompt format here
-        let detailedPrompt = `Given the code changes in JSON format: ${JSON.stringify(request, null, 2)}, 
-        Add proper styling like readme.md & provide a detailed code review. The review should include:
+        let detailedPrompt = `Add proper styling like readme.md but don't add text readme.md & provide a detailed code review from the commit, The review should include:
         1. Summary by Zoom CodeGuard
         2. List of New Features, Enhancements, Bug Fixes, and Documentation changes
         3. A walkthrough explaining the integration and functionality enhancements
         4. Detailed changes per file
-        5. Highlight any hardcoded or potentially sensitive values
-        `;
+        5. Identify all the hardcoded value
+        6. Highlight any hardcoded or potentially sensitive values`;
+
+        // Adding the system-generated prompt to userRequest messages
+        userRequest.messages.unshift({
+            role: "system",
+            content: detailedPrompt
+        });
+
+        console.log("------------------ User Request -------------------")
+        console.log(userRequest)
 
         const completion = await openai.createChatCompletion({
             model: process.env.GPT_MODEL,
-            messages: [{ role: "system", content: detailedPrompt }],
+            messages: userRequest.messages,
         });
 
         return completion.data.choices[0].message.content; // Assuming GPT-4 returns data in this structure
     } catch (err) {
+        console.error("Error calling OpenAI:", err.message);
         throw new Error(`Failing Open AI due to: ${err.message}`);
     }
 };
 
-const detectHardcodedValues = (code) => {
-    console.log("Code:", code);
-    const findings = [];
-
-    // Define patterns to match different types of hardcoded values
-    const patterns = {
-        'Sensitive Keys/Tokens': /\b(?:apiKey|apiToken|accessKey|secretKey|password)\s*=\s*['"][^'"]+['"]/gi,
-        'Generic Strings': /(['"])[^'"]*\1/g,
-        'Numeric Literals': /\b\d+\b/g,
-        'Boolean Literals': /\b(?:true|false)\b/gi,
-        'URLs/URIs': /\bhttps?:\/\/[^\s'"]+\b/gi,
-        'File Paths': /['"](?:\/|\\|\.\.\/|\.\\)[^\s'"]*['"]/g
-    };
-
-    // Check for each pattern in the code
-    Object.entries(patterns).forEach(([type, pattern]) => {
-        const matches = code.match(pattern);
-        if (matches && matches.length > 0) {
-            findings.push({ type, matches });
-        }
-    });
-
-    return findings;
-};
-
-const prepareReviewRequest = (files) => {
-    let review = { files: {} };
-    files.forEach(async file => {
-        if(file.raw_url) {
-            const content = await getFileContent(file.raw_url); // assuming content fetch function
-            const hardcoded = detectHardcodedValues(content);
-            review.files[file.filename] = { content, hardcoded };
-        }
-    });
-    return review;
-};
-
-exports.callOpenAIAPI = async (body) => {
+exports.handleGitHubCodeReview = async (body) => {
     try {
         const { filesChanged } = body;
 
-        console.log("--------------------------------------------")
+        console.log("--------------------------------------------");
         console.log(body);
-        console.log("--------------------------------------------")
+        console.log("--------------------------------------------");
 
         let filesData = [];
 
-        // Fetch and prepare file data with hardcoded value detection
         for (const file of filesChanged) {
             const fileContent = await getFileContent(file.raw_url);
+            // const directories = file.filename.split('/');
             filesData.push({
-                filename: file.filename,
-                content: fileContent
+                // filename: directories[directories.length - 1],
+                role: 'user',
+                content: fileContent,
             });
         }
 
-        // Prepare review request data including detection of hardcoded values
-        const preparedReview = prepareReviewRequest(filesData);
+        console.log(filesData, " ---- Here")
+
 
         let userRequest = {
             model: process.env.GPT_MODEL,
-            messages: [{
-                role: "system",
-                content: `Analyze the following code changes and provide a detailed code review:`
-            }, {
-                role: "user",
-                content: JSON.stringify(preparedReview)
-            },
-            // {
-            //     role: "user",
-            //     content: config.get('promptMessage')
-            // }
-            ]
+            messages: [...filesData]
         };
 
-        let reviewData = await callOpenAPI(body, userRequest);
-        reviewData = reviewData.trim();  // Remove leading/trailing whitespace
-        reviewData = reviewData.replace(/```\s*json\s*\n/, '');  // Remove the starting delimiter
-        reviewData = reviewData.replace(/\n```$/, '');  // Remove the ending delimiter
+       
+        let reviewData = await callOpenAPI(userRequest);
 
-        
+        reviewData = reviewData.trim();
+        reviewData = reviewData.replace(/```\s*json\s*\n/, '');
+        reviewData = reviewData.replace(/\n```$/, '');
+
         await storeDataInDynamoDB({
             commitId: body.commitId,
             userId: body.committerUserId,
             totalLinesAdded: body.totalLinesAdded,
             repoName: body.repoName,
             filesChanged: body.filesChanged,
-
-
             comments: reviewData,
             mergeToProduction: false
-            // rating: jsonObject.rating,
-            // ratingJustification: jsonObject.ratingJustification,
-            // mergeToProduction: isGoodRating // Store the flag based on rating
         });
 
-
-        // POST COMMENT TO GITHUB
+        // Atique
         await postCommentToGitHub(body.repoName, body.commitId, reviewData);
-
-        // CODE REVIEW BY GPT-4 AND CREATE A PULL REQUEST
-        await createPullRequest(body.repoName, 'master', 'develop', 'AI Code Review Enhancements and Fixes', reviewData)
-       
+        await createPullRequest(body.repoName, 'master', 'develop', 'AI Code Review Enhancements and Fixes', reviewData);
 
         return { message: 'Comments were successfully posted to GitHub. A pull request (PR) was also created.' };
 
-        // if (isGoodRating) {
-        //     // Create and merge a pull request from 'develop' to 'master'
-        //     await mergeBranches(body.repoName, 'master', 'develop', 'Automated PR by Bot', 'Automatically merging due to good review ratings.');
-        //     console.log('Successfully merged develop into master');
-        //     return { message: 'Comments posted to GitHub successfully. Successfully merged develop into master.' };
-        // } else {
-        //     console.log('Your code has less than 5 rating. Code does not merge with master branch, please check your commit comments.');
-        //     return { message: 'Your code has less than 5 rating. Code does not merge with master branch, please check your commit comments.' };
-        // }
-
     } catch (err) {
-        console.error(chalk.red("Error:", err));
+        console.error("Error in handleGitHubCodeReview:", err);
         throw err; // Rethrow the error for upstream handling
     }
 };
-
 
 const getFileContent = async (url) => {
     try {
@@ -243,7 +188,7 @@ const getFileContent = async (url) => {
         const response = await axios.get(url, {
             headers: { 'Authorization': `Bearer ${process.env.GITHUB_TOKEN}` }
         });
-        return response.data;
+        return JSON.stringify(response.data);
     } catch (error) {
         throw new Error(`Failed to fetch file content: ${error.message}`);
     }
