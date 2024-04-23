@@ -110,8 +110,8 @@ const callOpenAPI = async (userRequest) => {
             content: detailedPrompt
         });
 
-        console.log("------------------ User Request -------------------")
-        console.log(userRequest)
+        // console.log("------------------ User Request -------------------")
+        // console.log(userRequest)
 
         const completion = await openai.createChatCompletion({
             model: process.env.GPT_MODEL,
@@ -145,8 +145,7 @@ exports.handleGitHubCodeReview = async (body) => {
             });
         }
 
-        console.log(filesData, " ---- Here")
-
+       
 
         let userRequest = {
             model: process.env.GPT_MODEL,
@@ -170,7 +169,6 @@ exports.handleGitHubCodeReview = async (body) => {
             mergeToProduction: false
         });
 
-        // Atique
         await postCommentToGitHub(body.repoName, body.commitId, reviewData);
         await createPullRequest(body.repoName, 'master', 'develop', 'AI Code Review Enhancements and Fixes', reviewData);
 
