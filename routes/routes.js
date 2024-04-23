@@ -7,8 +7,8 @@ app.use(bodyParser.json());
 
 // Controller
 const resourceController = require('../controllers/resourceController.js');
-const headerValidation = require('../middleware/headerValidation')
-const validateRequest = require('../middleware/validateRequest')
+// const headerValidation = require('../middleware/headerValidation')
+// const validateRequest = require('../middleware/validateRequest')
 
 // Sample API testing without bearerTokenPresent
 app.get('/', (req, res) => {
